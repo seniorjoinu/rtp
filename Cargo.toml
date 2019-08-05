@@ -1,0 +1,13 @@
+[package]
+name = "rtp"
+version = "0.1.0"
+authors = ["Alexander Vtyurin <senior.joinu@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+wirehair-wrapper = "0.1.1"
+uuid = "0.2"
+stash = "0.1.4"
+pnet = "0.22.0"
