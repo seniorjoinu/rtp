@@ -9,5 +9,5 @@ edition = "2018"
 [dependencies]
 wirehair-wrapper = "0.1.1"
 uuid = "0.2"
-stash = "0.1.4"
+hashbrown = "0.5"
 pnet = "0.22.0"
