@@ -11,7 +11,7 @@ categories = ["api-bindings", "encoding"]
 license = "MIT"
 
 [build-dependencies]
-cc = { version = "1.0" }
+cc = "1.0"
 
 [dev-dependencies]
-rand = { version = "0.7.0" }
+rand = "0.7.0"
