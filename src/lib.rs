@@ -6,6 +6,8 @@ use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use hashbrown::HashMap;
 use uuid::Uuid;
 
+pub mod socket;
+
 const DEFAULT_MTU: u16 = 1200;
 
 pub struct RTPConnection {
@@ -15,8 +17,10 @@ pub struct RTPConnection {
     packets_sent_lost_total: u32,
     packets_received_lost_total: u32,
     average_latency: f32,
-    active_send_contexts: HashMap<Uuid, RTPSendContext>,
-    active_receive_contexts: HashMap<Uuid, RTPReceiveContext>,
+    eventual_send_contexts: HashMap<Uuid, RTPSendContext>,
+    eventual_receive_contexts: HashMap<Uuid, RTPReceiveContext>,
+    sequential_send_contexts: HashMap<Uuid, RTPSendContext>,
+    sequential_receive_contexts:
 }
 
 impl RTPConnection {
@@ -34,9 +38,13 @@ impl RTPConnection {
     }
 }
 
-pub struct RTPSendContext {}
+pub struct RTPSendContext {
+    id: Uuid
+}
 
-pub struct RTPReceiveContext {}
+pub struct RTPReceiveContext {
+    id: Uuid
+}
 
 pub struct RTPPacket<'a> {
     data: Box<[u8]>,
@@ -50,11 +58,16 @@ pub enum RTPSocketState {
     CLOSED,
 }
 
+struct DataProducer {
+    data: Box<[u8]>,
+}
+
 pub struct RTPSocket {
     state: RTPSocketState,
     socket: UdpSocket,
     connections: HashMap<SocketAddr, RTPConnection>,
 }
+
 
 impl RTPSocket {
     pub fn bind(addr: &impl ToSocketAddrs) -> Result<RTPSocket, Error> {
@@ -98,10 +111,10 @@ impl RTPSocket {
 
     /// get associated connection
     pub fn get_connection(&self, addr: &SocketAddr) -> Option<&RTPConnection> {
-        unimplemented!()
+        self.connections.get(addr)
     }
 
-    pub fn create_connection(&mut self, addr: &SocketAddr) -> &RTPConnection {
+    pub fn get_or_put_connection(&mut self, addr: &SocketAddr) -> &RTPConnection {
         self.connections
             .entry(addr.clone())
             .or_insert_with(RTPConnection::new)
