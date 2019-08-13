@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 wirehair-wrapper = "0.1.1"
-uuid = "0.2"
 hashbrown = "0.5"
-pnet = "0.22.0"
 md4 = "0.8.0"
+mio = "0.6.19"
+atomic-counter = "1.0.1"

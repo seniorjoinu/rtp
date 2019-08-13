@@ -1,18 +1,19 @@
 use std::future::Future;
 use std::io::Result;
-use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+use std::net::SocketAddr;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
-struct SendFuture<'a> {
-    socket: UdpSocket
-}
+use atomic_counter::{AtomicCounter, ConsistentCounter};
+use mio::net::UdpSocket as MUDPSocket;
+use mio::{Event, Events, Poll as MPoll, PollOpt, Ready, Token};
+
+struct SendFuture {}
 
 impl Future for SendFuture {
     type Output = ();
 
-    fn poll(self, cx: &mut Context) -> Poll<Self::Output> {
-        if
-    }
+    fn poll(self, cx: &mut Context) -> Poll<Self::Output> {}
 }
 
 struct ReceiveFuture {}
@@ -30,9 +31,7 @@ struct RetransmitFuture {}
 impl Future for RetransmitFuture {
     type Output = ();
 
-    fn poll(self, cx: &mut Context) -> Poll<Self::Output> {
-        cx.waker().
-    }
+    fn poll(self, cx: &mut Context) -> Poll<Self::Output> {}
 }
 
 /// An entity that can effectively and reliably transmit some raw data to a remote host
@@ -55,8 +54,8 @@ trait AsyncTransmitter {
     ///
     /// Condition is a closure (data_sender, data_digest) -> bool
     fn retransmit_if<C>(&self, condition: C, to: &SocketAddr) -> RetransmitFuture
-        where
-            C: Fn(&SocketAddr, &[u8]) -> bool;
+    where
+        C: Fn(&SocketAddr, &[u8]) -> bool;
 
     /// Sends some (possibly large) raw data to a single remote host
     ///
@@ -84,12 +83,48 @@ trait AsyncMassTransmitter {
     ///
     /// Condition is a closure (any_data_sender, data_digest) -> bool
     fn retransmit_if<C>(&self, condition: C, to: &[&SocketAddr]) -> Box<[RetransmitFuture]>
-        where
-            C: Fn(&SocketAddr, &[u8]) -> bool;
+    where
+        C: Fn(&SocketAddr, &[u8]) -> bool;
 
     /// Sends some (possibly large) raw data to multiple remote hosts
     ///
     /// Transmission is performed in a queued manner (but paralleled to each receiver) - delivery
     /// order matters (FIFO)
     fn transmit_sequential(&self, data: &[u8], to: &[&SocketAddr]) -> Box<[SendFuture]>;
+}
+
+struct UDPReactor {
+    poll: MPoll,
+    events_buf: Events,
+}
+
+impl UDPReactor {
+    fn new(socket: &MUDPSocket, buf_size: usize) -> Result<Self> {
+        let poll = MPoll::new()?;
+        let events_buf = Events::with_capacity(buf_size);
+
+        poll.register(socket, Token(0), Ready::readable(), PollOpt::edge())?;
+        poll.register(socket, Token(1), Ready::writable(), PollOpt::edge())?;
+
+        Ok(UDPReactor { poll, events_buf })
+    }
+
+    fn make_progress(&mut self) -> Result<usize> {
+        self.poll
+            .poll(&mut self.events_buf, Some(Duration::new(0, 0)))
+    }
+
+    fn can_read(&self) -> usize {
+        self.events_buf
+            .iter()
+            .filter(|it| it.readiness().is_readable())
+            .count()
+    }
+
+    fn can_write(&self) -> usize {
+        self.events_buf
+            .iter()
+            .filter(|it| it.readiness().is_writable())
+            .count()
+    }
 }
