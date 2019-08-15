@@ -1,19 +1,25 @@
 use std::future::Future;
 use std::io::Result;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Duration;
 
-use atomic_counter::{AtomicCounter, ConsistentCounter};
-use mio::net::UdpSocket as MUDPSocket;
-use mio::{Event, Events, Poll as MPoll, PollOpt, Ready, Token};
+use hashbrown::HashMap;
+use mio::net::UdpSocket;
+use wirehair_wrapper::wirehair::{WirehairDecoder, WirehairEncoder};
+
+use crate::connection::Connection;
+use crate::reactor::UdpReactor;
+use crate::utils::Md4Hash;
 
 struct SendFuture {}
 
 impl Future for SendFuture {
     type Output = ();
 
-    fn poll(self, cx: &mut Context) -> Poll<Self::Output> {}
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        unimplemented!()
+    }
 }
 
 struct ReceiveFuture {}
@@ -21,7 +27,7 @@ struct ReceiveFuture {}
 impl Future for ReceiveFuture {
     type Output = Result<(usize, SocketAddr)>;
 
-    fn poll(self, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         unimplemented!()
     }
 }
@@ -31,7 +37,9 @@ struct RetransmitFuture {}
 impl Future for RetransmitFuture {
     type Output = ();
 
-    fn poll(self, cx: &mut Context) -> Poll<Self::Output> {}
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        unimplemented!()
+    }
 }
 
 /// An entity that can effectively and reliably transmit some raw data to a remote host
@@ -45,10 +53,6 @@ trait AsyncTransmitter {
     /// the delivery (FIRO - first in, random out)
     fn transmit(&self, data: &[u8], to: &SocketAddr) -> SendFuture;
 
-    /// Sets transmitter into relay mode: any received data will also be effectively retransmitted
-    /// to a single remote host
-    fn retransmit(&self, to: &SocketAddr) -> RetransmitFuture;
-
     /// Same as [retransmit](trait.AsyncTransmitter.retransmit), but data will be retransmitted
     /// only when condition is satisfied
     ///
@@ -61,6 +65,10 @@ trait AsyncTransmitter {
     ///
     /// Transmission is performed in a queued manner - delivery order matters (FIFO)
     fn transmit_sequential(&self, data: &[u8], to: &SocketAddr) -> SendFuture;
+
+    fn retransmit_sequential_if<C>(&self, condition: C, to: &SocketAddr) -> RetransmitFuture
+    where
+        C: Fn(&SocketAddr, &[u8]) -> bool;
 }
 
 /// An entity that can effectively and reliably transmit some raw data to multiple remote hosts
@@ -73,10 +81,6 @@ trait AsyncMassTransmitter {
     /// Transmission is performed in a multiplexed manner - it doesn't care about the order of
     /// the delivery (FIRO - first in, random out)
     fn transmit(&self, data: &[u8], to: &[&SocketAddr]) -> Box<[SendFuture]>;
-
-    /// Sets transmitter into relay mode: any received data will also be effectively retransmitted
-    /// to multiple remote hosts
-    fn retransmit(&self, to: &[&SocketAddr]) -> Box<[RetransmitFuture]>;
 
     /// Same as [retransmit](trait.AsyncMassTransmitter.retransmit), but data will be retransmitted
     /// only when condition is satisfied
@@ -91,40 +95,62 @@ trait AsyncMassTransmitter {
     /// Transmission is performed in a queued manner (but paralleled to each receiver) - delivery
     /// order matters (FIFO)
     fn transmit_sequential(&self, data: &[u8], to: &[&SocketAddr]) -> Box<[SendFuture]>;
+
+    fn retransmit_sequential_if<C>(
+        &self,
+        condition: C,
+        to: &[&SocketAddr],
+    ) -> Box<[RetransmitFuture]>
+    where
+        C: Fn(&SocketAddr, &[u8]) -> bool;
 }
 
-struct UDPReactor {
-    poll: MPoll,
-    events_buf: Events,
+struct Transmitter {
+    socket: UdpSocket,
+    reactor: UdpReactor,
+    input_data_sources: HashMap<Md4Hash, WirehairDecoder>,
+    output_data_sources: HashMap<Md4Hash, WirehairEncoder>,
+    connections: HashMap<SocketAddr, Connection>,
 }
 
-impl UDPReactor {
-    fn new(socket: &MUDPSocket, buf_size: usize) -> Result<Self> {
-        let poll = MPoll::new()?;
-        let events_buf = Events::with_capacity(buf_size);
+impl Transmitter {
+    fn new(socket: UdpSocket, event_capacity: usize) -> Result<Self> {
+        let reactor = UdpReactor::new(&socket, event_capacity)?;
 
-        poll.register(socket, Token(0), Ready::readable(), PollOpt::edge())?;
-        poll.register(socket, Token(1), Ready::writable(), PollOpt::edge())?;
+        Ok(Transmitter {
+            socket,
+            reactor,
+            input_data_sources: HashMap::new(),
+            output_data_sources: HashMap::new(),
+            connections: HashMap::new(),
+        })
+    }
+}
 
-        Ok(UDPReactor { poll, events_buf })
+impl AsyncTransmitter for Transmitter {
+    fn receive(&self, buf: &mut [u8]) -> ReceiveFuture {
+        unimplemented!()
     }
 
-    fn make_progress(&mut self) -> Result<usize> {
-        self.poll
-            .poll(&mut self.events_buf, Some(Duration::new(0, 0)))
+    fn transmit(&self, data: &[u8], to: &SocketAddr) -> SendFuture {
+        unimplemented!()
     }
 
-    fn can_read(&self) -> usize {
-        self.events_buf
-            .iter()
-            .filter(|it| it.readiness().is_readable())
-            .count()
+    fn retransmit_if<C>(&self, condition: C, to: &SocketAddr) -> RetransmitFuture
+    where
+        C: Fn(&SocketAddr, &[u8]) -> bool,
+    {
+        unimplemented!()
     }
 
-    fn can_write(&self) -> usize {
-        self.events_buf
-            .iter()
-            .filter(|it| it.readiness().is_writable())
-            .count()
+    fn transmit_sequential(&self, data: &[u8], to: &SocketAddr) -> SendFuture {
+        unimplemented!()
+    }
+
+    fn retransmit_sequential_if<C>(&self, condition: C, to: &SocketAddr) -> RetransmitFuture
+    where
+        C: Fn(&SocketAddr, &[u8]) -> bool,
+    {
+        unimplemented!()
     }
 }
